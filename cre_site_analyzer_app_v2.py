@@ -3,16 +3,14 @@ import streamlit as st
 import requests
 import openai
 
-# Load API keys from secrets
+# Load API keys from Streamlit secrets
 GOOGLE_API_KEY = st.secrets["GOOGLE_API_KEY"]
 CENSUS_API_KEY = st.secrets["CENSUS_API_KEY"]
 OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-openai.api_key = OPENAI_API_KEY
 
-# Helper functions omitted for brevity...
-# (We'll copy in the full logic from earlier)
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# Helper function to get nearby places
+# Get nearby places using Google Places API
 def get_nearby_places(address, radius=500):
     geocode_url = f"https://maps.googleapis.com/maps/api/geocode/json?address={address}&key={GOOGLE_API_KEY}"
     geo_response = requests.get(geocode_url).json()
@@ -27,7 +25,7 @@ def get_nearby_places(address, radius=500):
     results = places_response.get("results", [])
     return [{"name": place["name"], "types": place["types"]} for place in results]
 
-# Demographics
+# Get demographic data from U.S. Census API
 def get_demographics(zipcode):
     census_url = f"https://api.census.gov/data/2020/acs/acs5/profile?get=DP03_0062E,DP03_0063E&for=zip%20code%20tabulation%20area:{zipcode}&key={CENSUS_API_KEY}"
     response = requests.get(census_url).json()
@@ -41,23 +39,26 @@ def get_demographics(zipcode):
         "Poverty Rate Estimate": data.get("DP03_0063E", "N/A") + "%"
     }
 
-# Score
+# Estimate traffic score
 def compute_site_traffic_score(places, demographics):
     score = 0
     anchor_keywords = ["walmart", "starbucks", "target", "whole foods", "costco", "kroger", "aldi"]
+
     score += len(places) * 2
     for place in places:
         if any(anchor in place["name"].lower() for anchor in anchor_keywords):
             score += 20
+
     try:
         income = int(demographics.get("Median Household Income", "$0").replace("$", "").replace(",", ""))
         if income > 60000: score += 15
         elif income > 40000: score += 10
         else: score += 5
     except: score += 0
+
     return min(score, 100)
 
-# Summary
+# Generate AI-powered site summary
 def generate_summary(address, places, demographics, traffic_score):
     prompt = f"""
 You are an AI commercial real estate analyst. Analyze the following site:
@@ -72,14 +73,14 @@ Give a brief site summary including:
 - Investment outlook
 - Anchor co-tenancy or notable patterns
 """
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.7
     )
     return response.choices[0].message.content.strip()
 
-# App UI
+# Streamlit App Interface
 st.title("🏢 CRE Site Analyzer (Free Version)")
 
 address = st.text_input("Enter a property address")
